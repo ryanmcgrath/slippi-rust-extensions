@@ -1,6 +1,6 @@
 use std::thread;
 
-use crate::utils::{Flag, Queue};
+use slippi_shared_types::{Flag, Queue};
 
 // Number of frames to wait before attempting to time-sync
 const ONLINE_LOCKSTEP_INTERVAL: usize = 30;

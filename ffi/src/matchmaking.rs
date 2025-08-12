@@ -215,7 +215,7 @@ pub struct MatchmakeResult {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn slprs_mm_get_matchmake_result(exi_device_instance_ptr: usize) -> MatchmakeResult {
-    with_returning::<SlippiEXIDevice, _, _>(exi_device_instance_ptr, |device| {
+    with_returning::<SlippiEXIDevice, _, _>(exi_device_instance_ptr, |_device| {
         MatchmakeResult {
             id: CString::new("").expect("").into_raw(),
             players: RustUserList::from(&[]),
@@ -234,7 +234,7 @@ pub enum RustSlippiRank {
 /// Returns the current rank for the player.
 #[unsafe(no_mangle)]
 pub extern "C" fn slprs_mm_get_player_rank(exi_device_instance_ptr: usize) -> RustSlippiRank {
-    with_returning::<SlippiEXIDevice, _, _>(exi_device_instance_ptr, |device| {
+    with_returning::<SlippiEXIDevice, _, _>(exi_device_instance_ptr, |_device| {
         RustSlippiRank::Unranked
     })
 }

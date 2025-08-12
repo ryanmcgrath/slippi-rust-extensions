@@ -8,4 +8,3 @@ mod netplay;
 pub use netplay::{NetplayClient, NetplayConnectionState};
 
 mod pad;
-mod utils;

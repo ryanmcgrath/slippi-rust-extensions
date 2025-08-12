@@ -1,9 +1,7 @@
-use std::ffi::{CString, c_char, c_uchar, c_int, c_uint, c_ushort};
+use std::ffi::{c_uchar, c_int, c_uint, c_ushort};
 
 use slippi_exi_device::SlippiEXIDevice;
 use slippi_netplay::NetplayConnectionState;
-use slippi_shared_types::OnlinePlayMode;
-use slippi_user::UserInfo;
 
 use crate::{with, with_returning};
 
@@ -57,6 +55,7 @@ pub extern "C" fn slprs_np_get_connection_status(exi_device_instance_ptr: usize)
 }
 
 #[repr(C)]
+#[allow(non_snake_case)]
 pub struct SlippiRemotePadOutput {
     pub latestFrame: c_int,
     pub playerIdx: c_uchar,
@@ -65,6 +64,7 @@ pub struct SlippiRemotePadOutput {
 }
 
 #[repr(C)]
+#[allow(non_snake_case)]
 pub struct SlippiPlayerSelections {
     pub playerIdx: c_uchar,
     pub characterId: c_uchar,
@@ -152,10 +152,11 @@ pub extern "C" fn slprs_np_get_latest_remote_frame(_exi_device_instance_ptr: usi
 }
 
 #[repr(C)]
+#[allow(non_snake_case)]
 pub struct SlippiMatchInfo {
-    localPlayerSelections: SlippiPlayerSelections,
-    remotePlayerSelections: *mut *mut SlippiPlayerSelections,
-    remotePlayerSelectionsLen: c_int
+    pub localPlayerSelections: SlippiPlayerSelections,
+    pub remotePlayerSelections: *mut *mut SlippiPlayerSelections,
+    pub remotePlayerSelectionsLen: c_int
 }
 
 /// Stubbed for now.
