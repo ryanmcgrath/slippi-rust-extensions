@@ -1232,6 +1232,7 @@ dependencies = [
  "slippi-game-reporter",
  "slippi-gg-api",
  "slippi-jukebox",
+ "slippi-netplay",
  "slippi-user",
  "tracing",
 ]
@@ -1247,6 +1248,7 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "slippi-gg-api",
+ "slippi-shared-types",
  "slippi-user",
  "tracing",
 ]
@@ -1275,6 +1277,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "slippi-netplay"
+version = "0.1.0"
+dependencies = [
+ "dolphin-integrations",
+ "slippi-shared-types",
+ "slippi-user",
+ "tracing",
+]
+
+[[package]]
+name = "slippi-shared-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_repr",
+]
+
+[[package]]
 name = "slippi-user"
 version = "0.1.0"
 dependencies = [
@@ -1298,6 +1318,8 @@ dependencies = [
  "slippi-exi-device",
  "slippi-game-reporter",
  "slippi-jukebox",
+ "slippi-netplay",
+ "slippi-shared-types",
  "slippi-user",
  "tracing",
 ]

@@ -9,6 +9,7 @@ use dolphin_integrations::Log;
 use slippi_game_reporter::GameReporter;
 use slippi_gg_api::APIClient;
 use slippi_jukebox::Jukebox;
+use slippi_netplay::{MatchmakingClient, NetplayClient};
 use slippi_user::UserManager;
 
 mod config;
@@ -21,6 +22,8 @@ pub struct SlippiEXIDevice {
     pub game_reporter: GameReporter,
     pub user_manager: UserManager,
     pub jukebox: Option<Jukebox>,
+    pub matchmaking: MatchmakingClient,
+    pub netplay: NetplayClient,
 }
 
 pub enum JukeboxConfiguration {
@@ -47,6 +50,8 @@ impl SlippiEXIDevice {
         );
 
         let game_reporter = GameReporter::new(api_client.clone(), user_manager.clone(), config.paths.iso.clone());
+        let matchmaking = MatchmakingClient::new(user_manager.clone(), &config.scm.slippi_semver);
+        let netplay = NetplayClient::new();
 
         // Playback has no need to deal with this.
         // (We could maybe silo more?)
@@ -58,6 +63,8 @@ impl SlippiEXIDevice {
             game_reporter,
             user_manager,
             jukebox: None,
+            matchmaking,
+            netplay
         }
     }
 

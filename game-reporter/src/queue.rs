@@ -13,8 +13,9 @@ use serde_json::json;
 
 use dolphin_integrations::{Color, Dolphin, Duration as OSDDuration, Log};
 use slippi_gg_api::{APIClient, GraphQLError};
+use slippi_shared_types::OnlinePlayMode;
 
-use crate::types::{GameReport, GameReportRequestPayload, OnlinePlayMode};
+use crate::types::{GameReport, GameReportRequestPayload};
 use crate::{ProcessingEvent, StatusReportEvent};
 
 /// How many times a report should attempt to send.

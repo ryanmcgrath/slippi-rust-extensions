@@ -3,7 +3,8 @@ use std::ffi::c_char;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use slippi_game_reporter::{GameReport, OnlinePlayMode as ReporterOnlinePlayMode, PlayerReport};
+use slippi_game_reporter::{GameReport, PlayerReport};
+use slippi_shared_types::OnlinePlayMode;
 
 use crate::{c_str_to_string, with};
 
@@ -83,10 +84,10 @@ pub extern "C" fn slprs_game_report_create(
         play_key,
 
         online_mode: match online_mode {
-            SlippiMatchmakingOnlinePlayMode::Ranked => ReporterOnlinePlayMode::Ranked,
-            SlippiMatchmakingOnlinePlayMode::Unranked => ReporterOnlinePlayMode::Unranked,
-            SlippiMatchmakingOnlinePlayMode::Direct => ReporterOnlinePlayMode::Direct,
-            SlippiMatchmakingOnlinePlayMode::Teams => ReporterOnlinePlayMode::Teams,
+            SlippiMatchmakingOnlinePlayMode::Ranked => OnlinePlayMode::Ranked,
+            SlippiMatchmakingOnlinePlayMode::Unranked => OnlinePlayMode::Unranked,
+            SlippiMatchmakingOnlinePlayMode::Direct => OnlinePlayMode::Direct,
+            SlippiMatchmakingOnlinePlayMode::Teams => OnlinePlayMode::Teams,
         },
 
         match_id,

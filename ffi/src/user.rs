@@ -1,6 +1,7 @@
 use std::ffi::{CString, c_char, c_int};
 
 use slippi_exi_device::SlippiEXIDevice;
+use slippi_user::UserInfo;
 
 use crate::{c_str_to_string, with, with_returning};
 
@@ -77,6 +78,33 @@ pub struct RustUserInfo {
     pub latest_version: *const c_char,
 }
 
+impl RustUserInfo {
+    /// Shorthand for initializing a C-version of UserInfo.
+    pub fn from(user: &UserInfo) -> Self {
+        Self {
+            uid: CString::new(user.uid.as_str())
+                .expect("uid CString failed")
+                .into_raw(),
+
+            play_key: CString::new(user.play_key.as_str())
+                .expect("play_key CString failed")
+                .into_raw(),
+
+            display_name: CString::new(user.display_name.as_str())
+                .expect("display_name CString failed")
+                .into_raw(),
+
+            connect_code: CString::new(user.connect_code.as_str())
+                .expect("connect_code CString failed")
+                .into_raw(),
+
+            latest_version: CString::new(user.latest_version.as_str())
+                .expect("latest_version CString failed")
+                .into_raw()
+        }
+    }
+}
+
 /// Hooks through the `UserManager` on the EXI Device at the provided pointer to get information
 /// for the current user. This then wraps it in a C struct to pass back so that ownership is safely
 /// moved.
@@ -88,31 +116,7 @@ pub struct RustUserInfo {
 pub extern "C" fn slprs_user_get_info(exi_device_instance_ptr: usize) -> *mut RustUserInfo {
     with_returning::<SlippiEXIDevice, _, _>(exi_device_instance_ptr, |device| {
         let user_info = device.user_manager.get(|user| {
-            let uid = CString::new(user.uid.as_str()).expect("uid CString failed").into_raw();
-
-            let play_key = CString::new(user.play_key.as_str())
-                .expect("play_key CString failed")
-                .into_raw();
-
-            let display_name = CString::new(user.display_name.as_str())
-                .expect("display_name CString failed")
-                .into_raw();
-
-            let connect_code = CString::new(user.connect_code.as_str())
-                .expect("connect_code CString failed")
-                .into_raw();
-
-            let latest_version = CString::new(user.latest_version.as_str())
-                .expect("latest_version CString failed")
-                .into_raw();
-
-            Box::new(RustUserInfo {
-                uid,
-                play_key,
-                display_name,
-                connect_code,
-                latest_version,
-            })
+            Box::new(RustUserInfo::from(user))
         });
 
         Box::into_raw(user_info)

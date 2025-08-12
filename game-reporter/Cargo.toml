@@ -21,4 +21,5 @@ serde_json = { workspace = true }
 serde_repr = { workspace = true }
 slippi-gg-api = { path = "../slippi-gg-api" }
 slippi-user = { path = "../user" }
+slippi-shared-types = { path = "../shared-types" }
 tracing = { workspace = true }

@@ -2,8 +2,7 @@ use std::ffi::{c_char, c_float, c_int, c_uint};
 
 use slippi_exi_device::SlippiEXIDevice;
 
-use crate::c_str_to_string;
-use crate::with_returning;
+use crate::{c_str_to_string, with_returning};
 
 /// Rank info that we vend back to the Dolphin side of things.
 #[repr(C)]

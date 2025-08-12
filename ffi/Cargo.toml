@@ -42,5 +42,7 @@ dolphin-integrations = { path = "../dolphin" }
 slippi-game-reporter = { path = "../game-reporter" }
 slippi-exi-device = { path = "../exi" }
 slippi-jukebox = { path = "../jukebox" }
+slippi-netplay = { path = "../netplay" }
+slippi-shared-types = { path = "../shared-types" }
 slippi-user = { path = "../user" }
 tracing = { workspace = true }

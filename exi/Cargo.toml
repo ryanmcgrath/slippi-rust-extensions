@@ -26,5 +26,6 @@ dolphin-integrations = { path = "../dolphin" }
 slippi-game-reporter = { path = "../game-reporter" }
 slippi-gg-api = { path = "../slippi-gg-api" }
 slippi-jukebox = { path = "../jukebox" }
+slippi-netplay = { path = "../netplay" }
 slippi-user = { path = "../user" }
 tracing = { workspace = true }

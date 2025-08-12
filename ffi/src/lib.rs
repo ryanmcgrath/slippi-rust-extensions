@@ -13,6 +13,8 @@ pub mod exi;
 pub mod game_reporter;
 pub mod jukebox;
 pub mod logger;
+pub mod matchmaking;
+pub mod netplay;
 pub mod rank_info;
 pub mod user;
 

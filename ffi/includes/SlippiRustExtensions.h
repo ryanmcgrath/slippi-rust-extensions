@@ -16,6 +16,25 @@ typedef enum DirectCodeKind {
 } DirectCodeKind;
 
 /**
+ * C-compatible enum for representing rank. This will disappear as things
+ * move further in to Rust.
+ */
+typedef enum RustSlippiRank {
+  Unranked,
+} RustSlippiRank;
+
+/**
+ * C-compatible enum that represents netplay client connection state.
+ */
+typedef enum SlippiConnectStatus {
+  NET_CONNECT_STATUS_UNSET = 0,
+  NET_CONNECT_STATUS_INITIATED = 1,
+  NET_CONNECT_STATUS_CONNECTED = 2,
+  NET_CONNECT_STATUS_FAILED = 3,
+  NET_CONNECT_STATUS_DISCONNECTED = 4,
+} SlippiConnectStatus;
+
+/**
  * This enum is duplicated from `slippi_game_reporter::OnlinePlayMode` in order
  * to appease cbindgen, which cannot see the type from the other module for
  * inspection.
@@ -29,6 +48,19 @@ typedef enum SlippiMatchmakingOnlinePlayMode {
   Direct = 2,
   Teams = 3,
 } SlippiMatchmakingOnlinePlayMode;
+
+/**
+ * A C-compatible version of the MatchmakingState enum that can be referenced on the
+ * Dolphin side. This will go away once we're mostly in Rust.
+ */
+typedef enum SlippiMatchmakingState {
+  Idle = 0,
+  Initializing = 1,
+  Matchmaking = 2,
+  OpponentConnecting = 3,
+  ConnectionSuccess = 4,
+  ErrorEncountered = 5,
+} SlippiMatchmakingState;
 
 /**
  * A configuration struct for passing over certain argument types from the C/C++ side.
@@ -46,16 +78,15 @@ typedef struct SlippiRustEXIConfig {
 } SlippiRustEXIConfig;
 
 /**
- * Rank info that we vend back to the Dolphin side of things.
+ * An intermediary type for moving chat messages across the FFI boundary.
+ *
+ * This type is C compatible, and we coerce Rust types into C types for this struct to
+ * ease passing things over. This must be free'd on the Rust side via `slprs_mm_free_stages`.
  */
-typedef struct RustRankInfo {
-  int fetch_status;
-  char rank;
-  float rating_ordinal;
-  unsigned int rating_update_count;
-  float rating_change;
-  int rank_change;
-} RustRankInfo;
+typedef struct RustStageList {
+  unsigned short **data;
+  int len;
+} RustStageList;
 
 /**
  * An intermediary type for moving `UserInfo` across the FFI boundary.
@@ -70,6 +101,67 @@ typedef struct RustUserInfo {
   const char *connect_code;
   const char *latest_version;
 } RustUserInfo;
+
+/**
+ * An intermediary type for moving a list of user info across the FFI boundary.
+ *
+ * This type is C compatible, and we coerce Rust types into C types for this struct to
+ * ease passing things over. This must be free'd on the Rust side via `slprs_mm_free_stages`.
+ */
+typedef struct RustUserList {
+  struct RustUserInfo **data;
+  int len;
+} RustUserList;
+
+/**
+ * C-Compatible struct for returning match result data.
+ */
+typedef struct MatchmakeResult {
+  const char *id;
+  struct RustUserList players;
+  struct RustStageList stages;
+} MatchmakeResult;
+
+typedef struct SlippiPlayerSelections {
+  unsigned char playerIdx;
+  unsigned char characterId;
+  unsigned char characterColor;
+  unsigned char teamId;
+  bool isCharacterSelected;
+  unsigned short stageId;
+  bool isStageSelected;
+  unsigned int rngOffset;
+  int messageId;
+  bool error;
+} SlippiPlayerSelections;
+
+/**
+ * A struct that represents player inputs.
+ */
+typedef struct SlippiPad {
+  int frame;
+  unsigned char player_index;
+  uint8_t *buffer;
+  int buffer_len;
+} SlippiPad;
+
+typedef struct SlippiMatchInfo {
+  struct SlippiPlayerSelections localPlayerSelections;
+  struct SlippiPlayerSelections **remotePlayerSelections;
+  int remotePlayerSelectionsLen;
+} SlippiMatchInfo;
+
+/**
+ * Rank info that we vend back to the Dolphin side of things.
+ */
+typedef struct RustRankInfo {
+  int fetch_status;
+  char rank;
+  float rating_ordinal;
+  unsigned int rating_update_count;
+  float rating_change;
+  int rank_change;
+} RustRankInfo;
 
 /**
  * An intermediary type for moving chat messages across the FFI boundary.
@@ -268,6 +360,146 @@ void slprs_logging_update_container(const char *kind, bool enabled, int level);
  * For more information, see `dolphin_logger::update_container`.
  */
 void slprs_mainline_logging_update_log_level(int level);
+
+/**
+ * Returns the index of the local player.
+ */
+int slprs_mm_local_player_idx(uintptr_t exi_device_instance_ptr);
+
+/**
+ * Initiates a search for a new match.
+ */
+void slprs_mm_find_match(uintptr_t exi_device_instance_ptr);
+
+/**
+ * Returns whatever current error string is on the matchmaking client. This value
+ * needs to be free'd from the Rust side and callers should make sure they do so via
+ * the provided generic method at the root of this crate.
+ */
+const char *slprs_mm_get_error_message(uintptr_t exi_device_instance_ptr);
+
+/**
+ * Returns the total number of known remote players.
+ */
+int slprs_mm_remote_player_count(uintptr_t exi_device_instance_ptr);
+
+/**
+ * Checks whether we're in a fixed-rules-mode or not.
+ */
+bool slprs_is_fixed_rules_mode(enum SlippiMatchmakingOnlinePlayMode mode);
+
+/**
+ * Gets the name for the player in the specific port.
+ */
+const char *slprs_mm_get_player_name(uintptr_t exi_device_instance_ptr, int port);
+
+/**
+ * Returns the current state of the matchmaking process.
+ */
+enum SlippiMatchmakingState slprs_mm_get_matchmake_state(uintptr_t exi_device_instance_ptr);
+
+/**
+ * Returns the current stage list the matchmaking service is working with.
+ *
+ * The returned type must be freed with the corresponding method, as the Rust allocator
+ * is different than the C/C++ ones.
+ */
+struct RustStageList slprs_mm_get_stages(uintptr_t exi_device_instance_ptr);
+
+/**
+ * Takes ownership back of a `RustStageList` struct and drops it.
+ *
+ * When the C/C++ side grabs `RustStage`, it needs to ensure that it's passed back to Rust
+ * to ensure that the memory layout matches - do _not_ call `free` on `RustStageList`, pass it
+ * here instead.
+ */
+void slprs_mm_free_stages(struct RustStageList *ptr);
+
+/**
+ * Instructs the matchmaking service to reset internal state.
+ */
+void slprs_mm_reset(uintptr_t exi_device_instance_ptr);
+
+/**
+ * Get information for all the current players in the matchmaking service.
+ */
+struct RustUserList slprs_mm_get_player_info(uintptr_t exi_device_instance_ptr);
+
+struct MatchmakeResult slprs_mm_get_matchmake_result(uintptr_t exi_device_instance_ptr);
+
+/**
+ * Returns the current rank for the player.
+ */
+enum RustSlippiRank slprs_mm_get_player_rank(uintptr_t exi_device_instance_ptr);
+
+/**
+ * Returns whether the current player is the deciding side of a netplay interaction.
+ */
+bool slprs_np_get_is_decider(uintptr_t exi_device_instance_ptr);
+
+/**
+ * Instructs the netplay client that a game is starting.
+ */
+void slprs_np_start_game(uintptr_t exi_device_instance_ptr);
+
+/**
+ * Instructs the netplay client that a game is starting.
+ */
+void slprs_np_drop_old_remote_inputs(uintptr_t exi_device_instance_ptr);
+
+/**
+ * Returns the current connection status of the netplay client.
+ */
+enum SlippiConnectStatus slprs_np_get_connection_status(uintptr_t exi_device_instance_ptr);
+
+/**
+ * Update match selections for the current netplay session.
+ */
+void slprs_np_set_match_selections(uintptr_t _exi_device_instance_ptr,
+                                   struct SlippiPlayerSelections _selections);
+
+/**
+ * Sends provided packet data across the wire. This method is a stub at the moment, pending
+ * some internal API decisions.
+ */
+void slprs_np_send_async(uintptr_t _exi_device_instance_ptr, const uint8_t *_data, uintptr_t _len);
+
+/**
+ * Stubbed for now.
+ */
+void slprs_np_send_pad(uintptr_t _exi_device_instance_ptr, struct SlippiPad _pad);
+
+/**
+ * Stubbed for now.
+ */
+unsigned char slprs_np_get_remote_sent_chat_message(uintptr_t _exi_device_instance_ptr,
+                                                    bool _is_chat_enabled);
+
+/**
+ * Stubbed for now.
+ */
+void slprs_np_set_remote_sent_chat_message_id(uintptr_t _exi_device_instance_ptr,
+                                              unsigned char _id);
+
+/**
+ * Stubbed for now.
+ */
+struct SlippiPlayerSelections slprs_np_get_remote_chat_message(uintptr_t _exi_device_instance_ptr);
+
+/**
+ * Stubbed for now.
+ */
+int slprs_np_calc_time_offset_us(uintptr_t _exi_device_instance_ptr);
+
+/**
+ * Stubbed for now.
+ */
+int slprs_np_get_latest_remote_frame(uintptr_t _exi_device_instance_ptr);
+
+/**
+ * Stubbed for now.
+ */
+struct SlippiMatchInfo slprs_np_get_match_info(uintptr_t _exi_device_instance_ptr);
 
 /**
  * Fetches the result of a recently played match via its ID.

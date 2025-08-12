@@ -17,7 +17,7 @@ mod queue;
 use queue::GameReporterQueue;
 
 mod types;
-pub use types::{GameReport, OnlinePlayMode, PlayerReport};
+pub use types::{GameReport, PlayerReport};
 
 /// Events that we dispatch into the processing thread.
 #[derive(Copy, Clone, Debug)]
