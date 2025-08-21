@@ -8,4 +8,11 @@ dolphin-integrations = { path = "../dolphin" }
 slippi-shared-types = { path = "../shared-types" }
 slippi-user = { path = "../user" }
 
+rusty_enet = "0.4.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+slippi-gg-api = { path = "../slippi-gg-api" }

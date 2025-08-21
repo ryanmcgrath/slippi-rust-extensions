@@ -1,0 +1,22 @@
+[package]
+name = "test-matchmaking"
+description = "Tests matchmaking functionality."
+authors = [
+    "Slippi Team",
+    "Ryan McGrath <ryan@rymc.io>"
+]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+dolphin-integrations = { path = "../../dolphin" }
+slippi-gg-api = { path = "../../slippi-gg-api" }
+slippi-netplay = { path = "../../netplay" }
+slippi-shared-types = { path = "../../shared-types" }
+slippi-user = { path = "../../user" }
+
+rusty_enet = "0.4.0"
+
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

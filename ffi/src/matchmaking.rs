@@ -20,8 +20,8 @@ pub extern "C" fn slprs_mm_local_player_idx(exi_device_instance_ptr: usize) -> c
 /// Initiates a search for a new match.
 #[unsafe(no_mangle)]
 pub extern "C" fn slprs_mm_find_match(exi_device_instance_ptr: usize) {
-    with::<SlippiEXIDevice, _>(exi_device_instance_ptr, |device| {
-        device.matchmaking.find_match();
+    with::<SlippiEXIDevice, _>(exi_device_instance_ptr, |_device| {
+        // device.matchmaking.find_match();
     })
 }
 
@@ -31,7 +31,7 @@ pub extern "C" fn slprs_mm_find_match(exi_device_instance_ptr: usize) {
 #[unsafe(no_mangle)]
 pub extern "C" fn slprs_mm_get_error_message(exi_device_instance_ptr: usize) -> *const c_char {
     with_returning::<SlippiEXIDevice, _, _>(exi_device_instance_ptr, |device| {
-        let msg = device.matchmaking.error_message.as_str();
+        let msg = device.matchmaking.error_message.get();
         CString::new(msg).expect("slprs_mm_get_error_message failed").into_raw()
     })
 }
@@ -85,7 +85,7 @@ pub extern "C" fn slprs_mm_get_matchmake_state(
     exi_device_instance_ptr: usize,
 ) -> SlippiMatchmakingState {
     with_returning::<SlippiEXIDevice, _, _>(exi_device_instance_ptr, |device| {
-        match device.matchmaking.state {
+        match device.matchmaking.state.get() {
             MatchmakingState::Idle => SlippiMatchmakingState::Idle,
             MatchmakingState::Initializing => SlippiMatchmakingState::Initializing,
             MatchmakingState::Matchmaking => SlippiMatchmakingState::Matchmaking,
@@ -163,7 +163,7 @@ pub extern "C" fn slprs_mm_free_stages(ptr: *mut RustStageList) {
 #[unsafe(no_mangle)]
 pub extern "C" fn slprs_mm_reset(exi_device_instance_ptr: usize) {
     with::<SlippiEXIDevice, _>(exi_device_instance_ptr, |device| {
-        device.matchmaking.reset();
+        // device.matchmaking.reset();
     })
 }
 

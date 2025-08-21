@@ -12,6 +12,7 @@ members = [
     "jukebox", "netplay", "shared-types",
     "slippi-gg-api",
     "user",
+    "examples/test_matchmaking"
 ]
 
 # Ship the resulting dylib with debug information so we can figure out
