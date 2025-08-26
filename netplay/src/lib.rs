@@ -142,8 +142,17 @@ impl NetplayManager {
         let error = self.error.clone();
         let scm_ver = self.scm_ver.clone();
 
-        thread::spawn(move || {
-            matchmaking::run(state, context, error, scm_ver, api_client, user_manager, settings)
-        });
+        let result = thread::Builder::new()
+            .name("SlippiMatchmakingThread".into())
+            .spawn(move || {
+                matchmaking::run(state, context, error, scm_ver, api_client, user_manager, settings);
+            });
+
+        // It is unlikely this would ever be an issue.
+        if let Err(error) = result {
+            tracing::error!(target: Log::SlippiOnline, ?error, "Failed to launch matchmaking thread");
+            self.error.set("Failed to start mm".into());
+            self.state.set(NetplayState::ErrorEncountered);
+        }
     }
 }
