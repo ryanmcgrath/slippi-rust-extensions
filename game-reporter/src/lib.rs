@@ -148,20 +148,9 @@ impl GameReporter {
         }
     }
 
-    pub fn report_match_status(&self, match_id: String, status: String, background: bool) {
+    /// Queues up a match report to be sent to the API server.
+    pub fn report_match_status(&self, match_id: String, status: String) {
         let (uid, play_key) = self.user_manager.get(|user| (user.uid.clone(), user.play_key.clone()));
-
-        // If synchronous, call directly
-        if !background {
-            queue::report_match_status(
-                &self.queue.api_client,
-                uid.clone(),
-                match_id.clone(),
-                play_key.clone(),
-                status.clone(),
-            );
-            return;
-        }
 
         // If background, send to the processing thread
         let event = StatusReportEvent::ReportAvailable {

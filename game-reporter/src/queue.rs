@@ -80,7 +80,30 @@ pub(crate) fn run_report_match_status(api_client: APIClient, receiver: Receiver<
                 match_id,
                 status,
             }) => {
-                report_match_status(&api_client, uid, match_id, play_key, status);
+                match api_client.report_match_status(&uid, &match_id, &play_key, &status) {
+                    Ok(value) if value => {
+                        tracing::info!(
+                            target: Log::SlippiOnline,
+                            "Successfully executed status report request: {status}"
+                        );
+                    },
+
+                    Ok(value) => {
+                        tracing::error!(
+                            target: Log::SlippiOnline,
+                            ?value,
+                            "Error executing status report request: {status}"
+                        );
+                    },
+
+                    Err(error) => {
+                        tracing::error!(
+                            target: Log::SlippiOnline,
+                            ?error,
+                            "Error executing status report request: {status}"
+                        );
+                    }
+                }
             },
 
             Ok(StatusReportEvent::Shutdown) => {
@@ -101,40 +124,6 @@ pub(crate) fn run_report_match_status(api_client: APIClient, receiver: Receiver<
                 break;
             },
         }
-    }
-}
-
-/// Report a match status update.
-///
-/// This doesn't necessarily need to be here, but it's easier to grok the codebase
-/// if we keep all reporting network calls in one module.
-pub fn report_match_status(api_client: &APIClient, uid: String, match_id: String, play_key: String, status: String) {
-    let mutation = r#"
-        mutation ($report: OnlineMatchStatusReportInput!) {
-            reportOnlineMatchStatus (report: $report)
-        }
-    "#;
-
-    let variables = json!({
-        "report": {
-            "matchId": match_id,
-            "fbUid": uid,
-            "playKey": play_key,
-            "status": status,
-        }
-    });
-
-    match api_client
-        .graphql(mutation)
-        .variables(variables)
-        .data_field("/data/reportOnlineMatchStatus")
-        .send::<bool>()
-    {
-        Ok(value) if value => {
-            tracing::info!(target: Log::SlippiOnline, "Successfully executed status report request: {status}")
-        },
-        Ok(value) => tracing::error!(target: Log::SlippiOnline, ?value, "Error executing status report request: {status}"),
-        Err(error) => tracing::error!(target: Log::SlippiOnline, ?error, "Error executing status report request: {status}"),
     }
 }
 

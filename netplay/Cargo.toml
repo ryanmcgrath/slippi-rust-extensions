@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 dolphin-integrations = { path = "../dolphin" }
+slippi-gg-api = { path = "../slippi-gg-api" }
 slippi-shared-types = { path = "../shared-types" }
 slippi-user = { path = "../user" }
 

@@ -13,16 +13,16 @@ fn main() {
         .with(tracing_subscriber::fmt::layer().compact())
         .init();
 
-    let scm_ver = "knux_test_rs";
+    let scm_ver = "3.5.1";
     let folder = "/Users/knux/Library/Application Support/com.project-slippi.dolphin/Slippi";
     let api_client = APIClient::new(scm_ver);
     
-    let user_manager = UserManager::new(api_client, folder.into(), scm_ver.into());
+    let user_manager = UserManager::new(api_client.clone(), folder.into(), scm_ver.into());
     user_manager.attempt_login();
 
-    let mut matchmaking = NetplayManager::new();
+    let mut matchmaking = NetplayManager::new(api_client, user_manager, scm_ver.into());
 
-    matchmaking.find_match("3.5.1", user_manager, MatchSearchSettings {
+    matchmaking.find_match(MatchSearchSettings {
         mode: OnlinePlayMode::Unranked,
         connect_code: String::new()
     });

@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use std::thread;
 
 use dolphin_integrations::Log;
+use slippi_gg_api::APIClient;
 use slippi_shared_types::{AtomicState, OnceValue};
 use slippi_user::UserManager;
 
@@ -44,15 +45,22 @@ pub struct NetplayManager {
     pub state: AtomicState<NetplayState>,
     pub context: OnceValue<MatchContext>,
     pub error: OnceValue<Cow<'static, str>>,
+
+    api_client: APIClient,
+    user_manager: UserManager,
+    scm_ver: String
 }
 
 impl NetplayManager {
     /// Initializes a new `NetplayManager`.
-    pub fn new() -> Self {
+    pub fn new(api_client: APIClient, user_manager: UserManager, scm_ver: String) -> Self {
         Self {
             state: AtomicState::new(NetplayState::Idle),
             context: OnceValue::new(),
-            error: OnceValue::new()
+            error: OnceValue::new(),
+            api_client,
+            user_manager,
+            scm_ver
         }
     }
 
@@ -113,12 +121,7 @@ impl NetplayManager {
     /// Things like enet deinitialization (etc) can take time and need to happen on a background
     /// thread, but since they're already over there anyway we can just spawn the netplay thread
     /// from there and let matchmaking wither away.
-    pub fn find_match(
-        &mut self,
-        scm_ver: &str,
-        user_manager: UserManager,
-        settings: MatchSearchSettings
-    ) {
+    pub fn find_match(&mut self, settings: MatchSearchSettings) {
         tracing::info!(target: Log::SlippiOnline, "Starting matchmaking...");
 
         // Set any existing state to `Idle` in case we're replacing an existing operation.
@@ -132,13 +135,15 @@ impl NetplayManager {
         self.context = OnceValue::new();
         self.error = OnceValue::new();
 
+        let api_client = self.api_client.clone();
+        let user_manager = self.user_manager.clone();
         let state = self.state.clone();
         let context = self.context.clone();
         let error = self.error.clone();
-        let scm_ver = scm_ver.to_string();
+        let scm_ver = self.scm_ver.clone();
 
         thread::spawn(move || {
-            matchmaking::run(state, context, error, scm_ver, user_manager, settings)
+            matchmaking::run(state, context, error, scm_ver, api_client, user_manager, settings)
         });
     }
 }

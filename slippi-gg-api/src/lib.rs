@@ -3,6 +3,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
+use serde_json::json;
 use ureq::{Agent, AgentBuilder, Resolver};
 
 mod graphql;
@@ -53,7 +54,8 @@ impl APIClient {
     /// The returned client will only resolve to IPV4 addresses at the moment
     /// due to upstream issues with GCP flex instances and IPV6.
     pub fn new(slippi_semver: &str) -> Self {
-        let _build = "";
+        let _build = "unknown";
+        let _os = "unknown";
 
         #[cfg(feature = "mainline")]
         let _build = "mainline";
@@ -64,6 +66,15 @@ impl APIClient {
         #[cfg(feature = "playback")]
         let _build = "playback";
 
+        #[cfg(target_os = "windows")]
+        let _os = "windows";
+
+        #[cfg(target_os = "macos")]
+        let _os = "macos";
+
+        #[cfg(target_os = "linux")]
+        let _os = "linux";
+
         // We set `max_idle_connections` to `5` to mimic how CURL was configured in
         // the old C++ logic. This gets cloned and passed down into modules so that
         // the underlying connection pool is shared.
@@ -71,7 +82,7 @@ impl APIClient {
             .resolver(Ipv4Resolver)
             .max_idle_connections(5)
             .timeout(default_timeout())
-            .user_agent(&format!("SlippiDolphin/{} ({}) (Rust)", _build, slippi_semver))
+            .user_agent(&format!("SlippiDolphin (v: {slippi_semver}) (b: {_build}) (o: {_os})"))
             .build();
 
         Self(http_client)
@@ -83,6 +94,35 @@ impl APIClient {
         Query: Into<String>,
     {
         GraphQLBuilder::new(self.clone(), query.into())
+    }
+
+    /// Notifies the API server about the status of a match.
+    pub fn report_match_status(
+        &self,
+        uid: &str,
+        match_id: &str,
+        play_key: &str,
+        status: &str
+    ) -> Result<bool, GraphQLError> {
+        let mutation = r#"
+            mutation ($report: OnlineMatchStatusReportInput!) {
+                reportOnlineMatchStatus (report: $report)
+            }
+        "#;
+
+        let variables = json!({
+            "report": {
+                "matchId": match_id,
+                "fbUid": uid,
+                "playKey": play_key,
+                "status": status,
+            }
+        });
+
+        self.graphql(mutation)
+            .variables(variables)
+            .data_field("/data/reportOnlineMatchStatus")
+            .send::<bool>()
     }
 }
 

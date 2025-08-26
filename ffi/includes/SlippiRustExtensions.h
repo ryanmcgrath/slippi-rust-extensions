@@ -230,15 +230,6 @@ void slprs_exi_device_log_game_report(uintptr_t instance_ptr, uintptr_t game_rep
 void slprs_exi_device_start_new_reporter_session(uintptr_t instance_ptr);
 
 /**
- * Calls through to the `SlippiGameReporter` on the EXI device to report a
- * match status update event.
- */
-void slprs_exi_device_report_match_status(uintptr_t instance_ptr,
-                                          const char *match_id,
-                                          const char *status,
-                                          bool background);
-
-/**
  * Calls through to `SlippiGameReporter::push_replay_data`.
  */
 void slprs_exi_device_reporter_push_replay_data(uintptr_t instance_ptr,

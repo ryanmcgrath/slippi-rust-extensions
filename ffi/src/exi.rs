@@ -161,30 +161,6 @@ pub extern "C" fn slprs_exi_device_start_new_reporter_session(instance_ptr: usiz
     let _leak = Box::into_raw(device);
 }
 
-/// Calls through to the `SlippiGameReporter` on the EXI device to report a
-/// match status update event.
-#[unsafe(no_mangle)]
-pub extern "C" fn slprs_exi_device_report_match_status(
-    instance_ptr: usize,
-    match_id: *const c_char,
-    status: *const c_char,
-    background: bool,
-) {
-    // Coerce the instances from the pointers. This is theoretically safe since we control
-    // the C++ side and can guarantee that the pointers are only owned
-    // by us, and are created/destroyed with the corresponding lifetimes.
-    let device = unsafe { Box::from_raw(instance_ptr as *mut SlippiEXIDevice) };
-
-    let fn_name = "slprs_exi_device_report_match_status";
-    let match_id = c_str_to_string(match_id, fn_name, "match_id");
-    let status = c_str_to_string(status, fn_name, "status");
-
-    device.game_reporter.report_match_status(match_id, status, background);
-
-    // Fall back into a raw pointer so Rust doesn't obliterate the object.
-    let _leak = Box::into_raw(device);
-}
-
 /// Calls through to `SlippiGameReporter::push_replay_data`.
 #[unsafe(no_mangle)]
 pub extern "C" fn slprs_exi_device_reporter_push_replay_data(instance_ptr: usize, data: *const u8, length: u32) {
