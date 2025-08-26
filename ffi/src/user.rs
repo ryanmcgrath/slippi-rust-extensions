@@ -196,10 +196,7 @@ impl RustChatMessages {
 pub extern "C" fn slprs_user_get_messages(exi_device_instance_ptr: usize) -> *mut RustChatMessages {
     with_returning::<SlippiEXIDevice, _, _>(exi_device_instance_ptr, |device| {
         let messages = device.user_manager.get(|user| {
-            Box::new(RustChatMessages::from(match &user.chat_messages {
-                Some(messages) => messages,
-                None => &[],
-            }))
+            Box::new(RustChatMessages::from(&user.chat_messages))
         });
 
         Box::into_raw(messages)
@@ -212,7 +209,7 @@ pub extern "C" fn slprs_user_get_messages(exi_device_instance_ptr: usize) -> *mu
 #[unsafe(no_mangle)]
 pub extern "C" fn slprs_user_get_default_messages(exi_device_instance_ptr: usize) -> *mut RustChatMessages {
     with_returning::<SlippiEXIDevice, _, _>(exi_device_instance_ptr, |_device| {
-        let messages = Box::new(RustChatMessages::from(&slippi_user::DEFAULT_CHAT_MESSAGES));
+        let messages = Box::new(RustChatMessages::from(&slippi_user::chat::DEFAULT_CHAT_MESSAGES));
         Box::into_raw(messages)
     })
 }

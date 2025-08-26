@@ -7,8 +7,7 @@ use std::sync::{Arc, Mutex};
 use dolphin_integrations::Log;
 use slippi_gg_api::APIClient;
 
-mod chat;
-pub use chat::DEFAULT_CHAT_MESSAGES;
+pub mod chat;
 
 mod direct_codes;
 use direct_codes::DirectCodes;
@@ -24,7 +23,7 @@ const USER_API_URL: &'static str = "https://users-rest-dot-slippi.uc.r.appspot.c
 
 /// The core payload that represents user information. This type is expected to conform
 /// to the same definition that the remote server uses.
-#[derive(Debug, Default, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct UserInfo {
     pub uid: String,
 
@@ -40,8 +39,8 @@ pub struct UserInfo {
     #[serde(alias = "latestVersion")]
     pub latest_version: String,
 
-    #[serde(alias = "chatMessages")]
-    pub chat_messages: Option<Vec<String>>,
+    #[serde(alias = "chatMessages", default)]
+    pub chat_messages: Vec<String>,
 }
 
 impl UserInfo {
@@ -49,8 +48,8 @@ impl UserInfo {
     ///
     /// Mostly checks to make sure we're not loading or receiving anything undesired.
     pub fn sanitize(&mut self) {
-        if self.chat_messages.is_none() || self.chat_messages.as_ref().unwrap().len() != 16 {
-            self.chat_messages = Some(chat::default());
+        if self.chat_messages.len() != 16 {
+            self.chat_messages = chat::default();
         }
     }
 }
@@ -425,7 +424,7 @@ fn overwrite_from_server(
     lock.display_name = info.display_name;
     lock.connect_code = info.connect_code;
     lock.latest_version = info.latest_version;
-    lock.chat_messages = Some(info.chat_messages);
+    lock.chat_messages = info.chat_messages;
     (*lock).sanitize();
 
     let rank_idx = SlippiRank::decide(

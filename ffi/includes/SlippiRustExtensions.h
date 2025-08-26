@@ -50,7 +50,7 @@ typedef enum SlippiMatchmakingOnlinePlayMode {
 } SlippiMatchmakingOnlinePlayMode;
 
 /**
- * A C-compatible version of the MatchmakingState enum that can be referenced on the
+ * A C-compatible version of the NetplayState enum that can be referenced on the
  * Dolphin side. This will go away once we're mostly in Rust.
  */
 typedef enum SlippiMatchmakingState {
@@ -363,6 +363,9 @@ void slprs_mainline_logging_update_log_level(int level);
 
 /**
  * Returns the index of the local player.
+ *
+ * This value is dependent on being called and referenced after the netplay state
+ * has successfully found a match. Checking it before such a state is incorrect.
  */
 int slprs_mm_local_player_idx(uintptr_t exi_device_instance_ptr);
 
@@ -372,7 +375,7 @@ int slprs_mm_local_player_idx(uintptr_t exi_device_instance_ptr);
 void slprs_mm_find_match(uintptr_t exi_device_instance_ptr);
 
 /**
- * Returns whatever current error string is on the matchmaking client. This value
+ * Returns whatever current error string is on the netplay client. This value
  * needs to be free'd from the Rust side and callers should make sure they do so via
  * the provided generic method at the root of this crate.
  */
@@ -394,12 +397,15 @@ bool slprs_is_fixed_rules_mode(enum SlippiMatchmakingOnlinePlayMode mode);
 const char *slprs_mm_get_player_name(uintptr_t exi_device_instance_ptr, int port);
 
 /**
- * Returns the current state of the matchmaking process.
+ * Returns the current state of the netplay process.
+ *
+ * This is mapped to old C++ conventions for now, where Matchmaking and Netplay were
+ * split. It'll go away in time as things move to Rust.
  */
 enum SlippiMatchmakingState slprs_mm_get_matchmake_state(uintptr_t exi_device_instance_ptr);
 
 /**
- * Returns the current stage list the matchmaking service is working with.
+ * Returns the current stage list the netplay manager is working with.
  *
  * The returned type must be freed with the corresponding method, as the Rust allocator
  * is different than the C/C++ ones.
@@ -416,14 +422,9 @@ struct RustStageList slprs_mm_get_stages(uintptr_t exi_device_instance_ptr);
 void slprs_mm_free_stages(struct RustStageList *ptr);
 
 /**
- * Instructs the matchmaking service to reset internal state.
- */
-void slprs_mm_reset(uintptr_t exi_device_instance_ptr);
-
-/**
  * Get information for all the current players in the matchmaking service.
  */
-struct RustUserList slprs_mm_get_player_info(uintptr_t exi_device_instance_ptr);
+struct RustUserList slprs_mm_get_player_info(uintptr_t _exi_device_instance_ptr);
 
 struct MatchmakeResult slprs_mm_get_matchmake_result(uintptr_t exi_device_instance_ptr);
 
@@ -435,22 +436,22 @@ enum RustSlippiRank slprs_mm_get_player_rank(uintptr_t exi_device_instance_ptr);
 /**
  * Returns whether the current player is the deciding side of a netplay interaction.
  */
-bool slprs_np_get_is_decider(uintptr_t exi_device_instance_ptr);
+bool slprs_np_get_is_decider(uintptr_t _exi_device_instance_ptr);
 
 /**
  * Instructs the netplay client that a game is starting.
  */
-void slprs_np_start_game(uintptr_t exi_device_instance_ptr);
+void slprs_np_start_game(uintptr_t _exi_device_instance_ptr);
 
 /**
  * Instructs the netplay client that a game is starting.
  */
-void slprs_np_drop_old_remote_inputs(uintptr_t exi_device_instance_ptr);
+void slprs_np_drop_old_remote_inputs(uintptr_t _exi_device_instance_ptr);
 
 /**
  * Returns the current connection status of the netplay client.
  */
-enum SlippiConnectStatus slprs_np_get_connection_status(uintptr_t exi_device_instance_ptr);
+enum SlippiConnectStatus slprs_np_get_connection_status(uintptr_t _exi_device_instance_ptr);
 
 /**
  * Update match selections for the current netplay session.

@@ -1,225 +1,60 @@
+use std::borrow::Cow;
 use std::net::UdpSocket;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicI8, Ordering};
-use std::thread;
 
 use rusty_enet::{Event, Host, HostSettings, Packet, PacketKind};
 use rusty_enet::error::{HostNewError, NoAvailablePeers};
 use thiserror::Error;
 
 use dolphin_integrations::Log;
-use slippi_shared_types::OnlinePlayMode;
-use slippi_user::{UserInfo, UserManager};
+use slippi_shared_types::{AtomicState, OnceValue, OnlinePlayMode};
+use slippi_user::UserManager;
+
+use crate::NetplayState;
+use crate::context::{MatchContext, Player, PlayerRank, Stage};
+
+const MM_HOST_DEV: &str = "mm2.slippi.gg";
+const MM_HOST_PROD: &str = "mm.slippi.gg";
+const MM_PORT: u16 = 43113;
 
 const CREATE_TICKET: &str = "create-ticket";
 const CREATE_TICKET_RESP: &str = "create-ticket-resp";
 const GET_TICKET_RESP: &str = "get-ticket-resp";
 
-use std::borrow::Cow;
-use std::sync::OnceLock;
-
-#[derive(Clone, Debug)]
-pub struct MatchmakingErrorMessage(Arc<OnceLock<Cow<'static, str>>>);
-
-impl MatchmakingErrorMessage {
-    pub fn new() -> Self {
-        Self(Arc::new(OnceLock::new()))
-    }
-
-    pub fn set(&self, value: Cow<'static, str>) {
-        if let Err(value) = self.0.set(value) {
-            tracing::warn!(target: Log::SlippiOnline, ?value, "MatchmakingErrorMessage double set");
-        }
-    }
-
-    pub fn get(&self) -> &str {
-        match self.0.get() {
-            Some(val) => val.as_ref(),
-            None => ""
-        }
-    }
-}
-
-/// Represents the current state of the matchmaking service.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum MatchmakingState {
-    Idle,
-    Initializing,
-    Matchmaking,
-    OpponentConnecting,
-    ConnectionSuccess,
-    ErrorEncountered,
-}
-
-impl MatchmakingState {
-    pub fn to_i8(self) -> i8 {
-        match self {
-            Self::Idle => 0,
-            Self::Initializing => 1,
-            Self::Matchmaking => 2,
-            Self::OpponentConnecting => 3,
-            Self::ConnectionSuccess => 4,
-            Self::ErrorEncountered => 5,
-        }
-    }
-}
-
-/// A thread-safe flag that represents the current state of matchmaking.
-#[derive(Clone, Debug)]
-pub struct MatchmakingStateFlag(Arc<AtomicI8>);
-
-impl MatchmakingStateFlag {
-    /// Initializes a new flag.
-    pub fn new(state: MatchmakingState) -> Self {
-        Self(Arc::new(AtomicI8::new(state.to_i8())))
-    }
-
-    pub fn set(&self, state: MatchmakingState) {
-        self.0.store(state.to_i8(), Ordering::Release);
-    }
-
-    pub fn get(&self) -> MatchmakingState {
-        match self.0.load(Ordering::Relaxed) {
-            0 => MatchmakingState::Idle,
-            1 => MatchmakingState::Initializing,
-            2 => MatchmakingState::Matchmaking,
-            3 => MatchmakingState::OpponentConnecting,
-            4 => MatchmakingState::ConnectionSuccess,
-            5 => MatchmakingState::ErrorEncountered,
-
-            // This should never happen, since we don't expose the inner atomic value
-            // for setting custom values.
-            _ => unreachable!()
-        }
-    }
-}
-
-
+/// Various settings used by the matchmaking server for pairing players up.
 #[derive(Clone, Debug)]
 pub struct MatchSearchSettings {
     pub mode: OnlinePlayMode,
     pub connect_code: String
 }
 
-const MM_HOST_DEV: &str = "mm2.slippi.gg";
-const MM_HOST_PROD: &str = "mm.slippi.gg";
-const MM_PORT: u16 = 43113;
-
-#[derive(Debug)]
-pub struct MatchmakingManager {
-    pub state: MatchmakingStateFlag,
-    pub error_message: MatchmakingErrorMessage,
-    pub local_player_index: usize,
-
-    user_manager: UserManager,
-    mm_host: &'static str,
-    is_mm_connected: bool,
-    background_thread: Option<thread::JoinHandle<Option<Host<UdpSocket>>>>,
-    player_info: Vec<UserInfo>,
-    allowed_stages: Vec<u16>,
-}
-
-impl MatchmakingManager {
-    /// Creates and returns a new MatchmakingManager instance.
-    pub fn new(user_manager: UserManager, scm_ver: &str) -> Self {
-        let mm_host = match scm_ver.contains("dev") {
-            true => MM_HOST_DEV,
-            false => MM_HOST_PROD
-        };
-
-        Self {
-            user_manager,
-            mm_host,
-            is_mm_connected: false,
-            background_thread: None,
-            state: MatchmakingStateFlag::new(MatchmakingState::Idle),
-            error_message: MatchmakingErrorMessage::new(),
-            local_player_index: 0,
-            player_info: Vec::new(),
-            allowed_stages: Vec::new(),
-        }
-    }
-
-    pub fn get_player_info(&self) -> &[UserInfo] {
-        &self.player_info
-    }
-
-    pub fn remote_player_count(&self) -> usize {
-        let count = self.player_info.len();
-
-        if count == 0 {
-            return 0;
-        }
-
-        count - 1
-    }
-
-    pub fn get_player_name(&self, port: usize) -> &str {
-        if port >= self.player_info.len() {
-            return "";
-        }
-
-        &self.player_info[port].display_name
-    }
-
-    pub fn get_stages(&self) -> &[u16] {
-        &self.allowed_stages
-    }
-
-    pub fn get_error_message(&self) -> &str {
-        ""
-        // &self.error_message
-    }
-
-    pub fn is_searching(&self) -> bool {
-        let state = self.state.get();
-        state == MatchmakingState::Initializing || state == MatchmakingState::Matchmaking
-    }
-
-    pub fn find_match(&mut self, settings: MatchSearchSettings) {
-        tracing::warn!(target: Log::SlippiOnline, "Starting matchmaking...");
-        
-        self.is_mm_connected = false;
-
-        // Note that we set a *new* flag here, as we don't want any old threads
-        // that haven't exited yet to possibly react to us changing the value
-        // behind things.
-        self.state = MatchmakingStateFlag::new(MatchmakingState::Initializing);
-        self.error_message = MatchmakingErrorMessage::new();
-
-        let user_manager = self.user_manager.clone();
-        let mm_host = self.mm_host;
-        let state = self.state.clone();
-        let error_message = self.error_message.clone();
-
-        let background_thread = thread::spawn(move || {
-            run_matchmaking(state, user_manager, mm_host, settings, error_message)
-        });
-
-        self.background_thread = Some(background_thread);
-    }
-
-    // All the methods we need to scaffold
-    // GetNetplayClient (?)
-}
-
 /// The core matchmaking operation.
 ///
-/// This should always be called from a background thread.
-fn run_matchmaking(
-    state: MatchmakingStateFlag,
+/// This should always be called on a background thread. If it successfully finds a match
+/// before erroring out (or before the player cancels the flow) then it will spawn another
+/// thread for netplay communication and "link" the main thread to it via the provided 
+/// channel receiver endpoint.
+pub fn run(
+    state: AtomicState<NetplayState>,
+    match_context: OnceValue<MatchContext>,
+    error_message: OnceValue<Cow<'static, str>>,
+    scm_ver: String,
     user_manager: UserManager,
-    mm_host: &'static str,
-    _settings: MatchSearchSettings,
-    error_message: MatchmakingErrorMessage
-) -> Option<Host<UdpSocket>> {
+    search: MatchSearchSettings
+) {
+    let mm_host = match scm_ver.contains("dev") {
+        true => MM_HOST_DEV,
+        false => MM_HOST_PROD
+    };
+
+    let mut context = MatchContext::default();
+
     // We need to set up a few networking related components before we attempt to 
     // do any matchmaking. These are hard requirements for any of the deeper matchmaking
     // states, but it is conceivable that the initial socket resolution and connection to
     // the matchmaking server could see delays. If it has delays, a user could choose to
     // back out of matchmaking; if this happens, we still want to let this thread bail
-    // out - hence why `MatchmakingState::Initializing` exists.
+    // out - hence why `NetplayState::Initializing` exists.
     //
     // i.e, if the user hasn't backed out by then, and we're still in the initializing phase,
     // then proceed to matchmaking proper.
@@ -242,8 +77,8 @@ fn run_matchmaking(
                 ConnectError::UnableToConnect => "Failed to start connection to mm server".into()
             });
 
-            state.set(MatchmakingState::ErrorEncountered);
-            return None;
+            state.set(NetplayState::ErrorEncountered);
+            return;
         }
     };
 
@@ -253,8 +88,8 @@ fn run_matchmaking(
         Err(error) => {
             tracing::error!(target: Log::SlippiOnline, ?error, "Failed matchmaking network setup");
             error_message.set("Unable to determine IP addr".into());
-            state.set(MatchmakingState::ErrorEncountered);
-            return None;
+            state.set(NetplayState::ErrorEncountered);
+            return;
         }
     };
 
@@ -267,9 +102,9 @@ fn run_matchmaking(
     // along, business as usual, and wind up "ghost connecting" to another player.
     loop {
         match state.get() {
-            MatchmakingState::Initializing => {
-                let Err(error) = submit_ticket(&mut host, &user_manager, &lan_addr) else {
-                    state.set(MatchmakingState::Matchmaking);
+            NetplayState::Initializing => {
+                let Err(error) = submit_ticket(&mut host, &user_manager, &lan_addr, &search, &scm_ver) else {
+                    state.set(NetplayState::Matchmaking);
                     continue;
                 };
                 
@@ -282,13 +117,13 @@ fn run_matchmaking(
                     SubmitTicketError::Server(error) => error.into()
                 });
 
-                state.set(MatchmakingState::ErrorEncountered);
-                return None;
+                state.set(NetplayState::ErrorEncountered);
+                return;
             },
 
-            MatchmakingState::Matchmaking => {
-                let Err(error) = handle_matchmaking(&mut host) else {
-                    state.set(MatchmakingState::OpponentConnecting);
+            NetplayState::Matchmaking => {
+                let Err(error) = handle_matchmaking(&mut host, &mut context, &user_manager) else {
+                    state.set(NetplayState::OpponentConnecting);
                     continue;
                 };
 
@@ -306,15 +141,12 @@ fn run_matchmaking(
                     MatchmakeError::Receive(ReceiveError::Disconnect) => "Lost connection to the mm server".into(),
                     MatchmakeError::Receive(_) => "Failed to receive mm status".into(),
                     MatchmakeError::InvalidResponse(_) => "Invalid response when getting mm status".into(),
-                    MatchmakeError::Server(error) => error.into()
+                    MatchmakeError::Server(error) => error.into(),
+                    MatchmakeError::InvalidAddr(_) => "Invalid response from mm".into()
                 });
 
-                state.set(MatchmakingState::ErrorEncountered);
-                return None;
-            },
-
-            MatchmakingState::OpponentConnecting => {
-                // check ticket status and react~, etc
+                state.set(NetplayState::ErrorEncountered);
+                return;
             },
 
             // Once we hit any other state, by any other means, this thread
@@ -324,19 +156,15 @@ fn run_matchmaking(
         }
     }
 
-    Some(host)
-}
+    // If we get here, we've got a valid match and we're good to go.
+    // Store the context in the provided slot, and spin up the Netplay thread.
+    //
+    // This thread will die off now and any resources can wither away.
+    match_context.set(context);
 
-impl Drop for MatchmakingManager {
-    fn drop(&mut self) {
-        self.state.set(MatchmakingState::Idle);
-
-        if let Some(background_thread) = self.background_thread.take() {
-            if let Err(error) = background_thread.join() {
-                tracing::error!(target: Log::SlippiOnline, ?error, "Unable to join background thread");
-            }
-        }
-    }
+    // Attempt to signal that we will try to connect to this match
+    // Spin up netplay thread
+    // De-init anything necessary here?
 }
 
 #[derive(Debug, Error)]
@@ -451,7 +279,7 @@ fn connect_to_mm(mm_host: &str) -> Result<(SocketAddr, Host<UdpSocket>, u16), Co
     // We are explicitly trying a slew of client addresses because we are trying to utilize
     // our connection to the matchmaking service in order to hole punch. Whichever port works
     // will end up being the port we listen on when we start our server.
-    let port_attempts = match get_dolphin_custom_netplay_port() {
+    let addr_attempts = match get_dolphin_custom_netplay_port() {
         Some(port) => vec![SocketAddr::new(addr, port)],
         
         None => (0..15).into_iter().map(|i| {
@@ -460,9 +288,9 @@ fn connect_to_mm(mm_host: &str) -> Result<(SocketAddr, Host<UdpSocket>, u16), Co
         }).collect()
     };
     
-    tracing::warn!(target: Log::SlippiOnline, ?port_attempts);
+    tracing::info!(target: Log::SlippiOnline, ?addr_attempts);
 
-    let socket = UdpSocket::bind(&*port_attempts).map_err(ConnectError::SocketBind)?;
+    let socket = UdpSocket::bind(&*addr_attempts).map_err(ConnectError::SocketBind)?;
     let port = socket.local_addr().map_err(ConnectError::SocketPortCheck)?.port();
 
     let mut host = Host::new(socket, HostSettings {
@@ -497,8 +325,6 @@ fn connect_to_mm(mm_host: &str) -> Result<(SocketAddr, Host<UdpSocket>, u16), Co
         }
 
         if attempt == max_attempts {
-            // set state = error
-            // set error message
             return Err(ConnectError::UnableToConnect);
         }
 
@@ -554,6 +380,7 @@ enum SubmitTicketError {
 struct SubmitTicketResponse {
     #[serde(alias = "type")]
     kind: String,
+
     error: Option<String>
 }
 
@@ -561,7 +388,9 @@ struct SubmitTicketResponse {
 fn submit_ticket(
     host: &mut Host<UdpSocket>,
     user_manager: &UserManager,
-    lan_addr: &str
+    lan_addr: &str,
+    search: &MatchSearchSettings,
+    app_version: &str
 ) -> Result<(), SubmitTicketError> {
     let (uid, play_key, connect_code, display_name) = user_manager.get(|user| {
         (user.uid.clone(), user.play_key.clone(), user.connect_code.clone(), user.display_name.clone())
@@ -576,10 +405,10 @@ fn submit_ticket(
             "displayName": display_name
         },
         "search": {
-            "mode": 1, // Unranked
-            "connectCode": ""
+            "mode": search.mode,
+            "connectCode": search.connect_code
         },
-        "appVersion": "3.5.1",
+        "appVersion": app_version,
         "ipAddressLan": lan_addr
     });
 
@@ -617,7 +446,41 @@ enum MatchmakeError {
     InvalidResponse(String),
 
     #[error("Error from server: {0}")]
-    Server(String)
+    Server(String),
+
+    #[error(transparent)]
+    InvalidAddr(std::net::AddrParseError)
+}
+	
+#[derive(Debug, serde::Deserialize)]
+struct PlayerInfo {
+    #[serde(alias = "isLocalPlayer")]
+    is_local: bool,
+
+    uid: String,
+
+    #[serde(alias = "displayName")]
+    display_name: String,
+
+    #[serde(alias = "connectCode")]
+    connect_code: String,
+
+    port: usize,
+
+    #[serde(alias = "ipAddress")]
+    ip_address: String,
+
+    #[serde(alias = "ipAddressLan")]
+    ip_address_lan: Option<String>,
+
+    #[serde(alias = "isBot")]
+    is_bot: bool,
+
+    #[serde(alias = "chatMessages")]
+    chat_messages: Vec<String>,
+
+    #[serde(default)]
+    rank: PlayerRank
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -625,24 +488,33 @@ struct TicketResponse {
     #[serde(alias = "type")]
     pub kind: String,
     
-    #[serde(alias = "latestVersion")]
-    pub latest_version: Option<String>,
+    #[serde(alias = "latestVersion", default)]
+    pub latest_version: String,
 
-    #[serde(alias = "matchId")]
-    pub match_id: Option<String>,
+    #[serde(alias = "matchId", default)]
+    pub match_id: String,
 
     pub error: Option<String>,
-    pub players: Option<Vec<serde_json::Value>>,
-    pub stages: Option<Vec<serde_json::Value>>,
+
+    #[serde(default)]
+    pub players: Vec<PlayerInfo>,
+
+    #[serde(default)]
+    pub stages: Vec<u16>,
 
     #[serde(alias = "isHost")]
     pub is_host: bool
 }
 
+/// Checks for a matchmaking response. If one is available, this will then
+/// handle extracting information and storing it in the provided `MatchContext`.
 fn handle_matchmaking(
-    host: &mut Host<UdpSocket>
+    host: &mut Host<UdpSocket>,
+    context: &mut MatchContext,
+    user_manager: &UserManager
 ) -> Result<(), MatchmakeError> {
-    let response: TicketResponse = receive(host, 2000).map_err(MatchmakeError::Receive)?;
+    let mut response: TicketResponse = receive(host, 2000)
+        .map_err(MatchmakeError::Receive)?;
     
     tracing::info!(target: Log::SlippiOnline, mm_response = ?response);
 
@@ -651,9 +523,110 @@ fn handle_matchmaking(
     }
 
     if let Some(error) = response.error {
-        // @TODO: Overwrite from MM
+        // Update version number when the mm server tells us our version is outdated
+        // Force latest version for people whose file updates dont work
+        //
+        // (@TODO: Is this even still necessary...?)
+        if response.latest_version != "" {
+            let latest_version = std::mem::take(&mut response.latest_version);
+            user_manager.overwrite_latest_version(latest_version);
+        }
+
         return Err(MatchmakeError::Server(error));
     }
 
+    tracing::warn!(target: Log::SlippiOnline, match_id = ?response.match_id);
+
+    context.id = response.match_id;
+    context.is_host = response.is_host;
+
+    // This is a socket address that will never actually be used; the API guarantees that we'll
+    // overwrite this value after we find the `is_local` player. It's just slightly nicer
+    // ergonomics-wise than dealing with an `Option` here.
+    let mut local_external_ip: SocketAddr = ([0; 4], 0).into();
+
+    for player in response.players.iter_mut() {
+        if player.is_local {
+            local_external_ip = player.ip_address.parse().map_err(MatchmakeError::InvalidAddr)?;
+            context.local_player_index = (player.port - 1) as usize;
+        }
+
+        let mut chat_messages = std::mem::take(&mut player.chat_messages);
+        if chat_messages.len() != 16 {
+            chat_messages = slippi_user::chat::default();
+        }
+
+        context.players.push(Player {
+            uid: std::mem::take(&mut player.uid),
+            display_name: std::mem::take(&mut player.display_name),
+            connect_code: std::mem::take(&mut player.connect_code),
+            chat_messages,
+            rank: player.rank,
+            is_bot: player.is_bot,
+            port: player.port
+        });
+    }
+    
+    // Loop a second time to ensure we have the correct IPs.
+    //
+    // Note that this is translated more or less verbatim from the older C++ code; I assume
+    // that there's an important reason for doing it this way and the extra loop isn't the end
+    // of the world.
+    for player in response.players.into_iter() {
+        if (player.port - 1) as usize == context.local_player_index {
+            continue;
+        }
+
+        let addr: SocketAddr = player
+            .ip_address
+            .as_str()
+            .parse()
+            .map_err(MatchmakeError::InvalidAddr)?;
+
+        // @TODO: Under what circumstances could `addr` _match_ `local_external_ip`? Something
+        // about this logic feels weird to me - like there's a very small window where an address
+        // could not be pushed to the remote_addrs?
+        if addr.ip() != local_external_ip.ip() || player.ip_address_lan.is_none() {
+            context.remote_addrs.push(addr);
+            continue;
+        }
+
+        // If external IPs are the same, try using LAN IPs
+        // TODO: Instead of using one or the other, it might be better to try both
+        if let Some(lan_addr) = player.ip_address_lan {
+            let addr: SocketAddr = lan_addr
+                .as_str()
+                .parse()
+                .map_err(MatchmakeError::InvalidAddr)?;
+
+            context.remote_addrs.push(addr);
+        }
+    }
+
+    for value in response.stages.into_iter() {
+        if let Some(stage) = Stage::from(value) {
+            context.stages.push(stage);
+        } else {
+            tracing::warn!(target: Log::SlippiOnline, "Received unknown stage value: {}", value);
+        }
+    }
+    
+    // Shouldn't happen, but here just in case.
+    if context.stages.is_empty() {
+        context.stages = vec![
+            Stage::PokemonStadium,
+            Stage::YoshisStory,
+            Stage::Dreamland,
+            Stage::Battlefield,
+            Stage::FinalDestination
+        ];
+
+        // If singles, FoD should be allowed.
+        if context.players.len() == 2 {
+            context.stages.push(Stage::FountainOfDreams);
+        }
+    }
+
+    println!("{:?}", context);
     Ok(())
 }

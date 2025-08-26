@@ -1,32 +1,35 @@
 use std::ffi::{c_uchar, c_int, c_uint, c_ushort};
 
-use slippi_exi_device::SlippiEXIDevice;
-use slippi_netplay::NetplayConnectionState;
+//use slippi_exi_device::SlippiEXIDevice;
+//use slippi_netplay::NetplayConnectionState;
 
-use crate::{with, with_returning};
+//use crate::{with, with_returning};
 
 /// Returns whether the current player is the deciding side of a netplay interaction.
 #[unsafe(no_mangle)]
-pub extern "C" fn slprs_np_get_is_decider(exi_device_instance_ptr: usize) -> bool {
-    with_returning::<SlippiEXIDevice, _, _>(exi_device_instance_ptr, |device| {
+pub extern "C" fn slprs_np_get_is_decider(_exi_device_instance_ptr: usize) -> bool {
+    unimplemented!()
+    /*with_returning::<SlippiEXIDevice, _, _>(exi_device_instance_ptr, |device| {
         device.netplay.is_decider
-    })
+    })*/
 }
 
 /// Instructs the netplay client that a game is starting.
 #[unsafe(no_mangle)]
-pub extern "C" fn slprs_np_start_game(exi_device_instance_ptr: usize) {
-    with::<SlippiEXIDevice, _>(exi_device_instance_ptr, |device| {
+pub extern "C" fn slprs_np_start_game(_exi_device_instance_ptr: usize) {
+    unimplemented!()
+    /*with::<SlippiEXIDevice, _>(exi_device_instance_ptr, |device| {
         device.netplay.start_game();
-    })
+    })*/
 }
 
 /// Instructs the netplay client that a game is starting.
 #[unsafe(no_mangle)]
-pub extern "C" fn slprs_np_drop_old_remote_inputs(exi_device_instance_ptr: usize) {
-    with::<SlippiEXIDevice, _>(exi_device_instance_ptr, |device| {
+pub extern "C" fn slprs_np_drop_old_remote_inputs(_exi_device_instance_ptr: usize) {
+    unimplemented!()
+    /*with::<SlippiEXIDevice, _>(exi_device_instance_ptr, |device| {
         device.netplay.drop_old_remote_inputs();
-    })
+    })*/
 }
 
 /// C-compatible enum that represents netplay client connection state.
@@ -42,8 +45,9 @@ pub enum SlippiConnectStatus {
 
 /// Returns the current connection status of the netplay client.
 #[unsafe(no_mangle)]
-pub extern "C" fn slprs_np_get_connection_status(exi_device_instance_ptr: usize) -> SlippiConnectStatus {
-    with_returning::<SlippiEXIDevice, _, _>(exi_device_instance_ptr, |device| {
+pub extern "C" fn slprs_np_get_connection_status(_exi_device_instance_ptr: usize) -> SlippiConnectStatus {
+    unimplemented!()
+    /*with_returning::<SlippiEXIDevice, _, _>(exi_device_instance_ptr, |device| {
         match device.netplay.get_connection_state() {
             NetplayConnectionState::Unset => SlippiConnectStatus::NET_CONNECT_STATUS_UNSET,
             NetplayConnectionState::Initiated => SlippiConnectStatus::NET_CONNECT_STATUS_INITIATED,
@@ -51,7 +55,7 @@ pub extern "C" fn slprs_np_get_connection_status(exi_device_instance_ptr: usize)
             NetplayConnectionState::Failed => SlippiConnectStatus::NET_CONNECT_STATUS_FAILED,
             NetplayConnectionState::Disconnected => SlippiConnectStatus::NET_CONNECT_STATUS_DISCONNECTED
         }
-    })
+    })*/
 }
 
 #[repr(C)]
