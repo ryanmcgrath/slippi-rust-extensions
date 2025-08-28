@@ -161,6 +161,31 @@ pub extern "C" fn slprs_exi_device_start_new_reporter_session(instance_ptr: usiz
     let _leak = Box::into_raw(device);
 }
 
+/// Fires off a network request to report match status.
+#[unsafe(no_mangle)]
+pub extern "C" fn slprs_exi_device_report_match_status(
+    instance_ptr: usize,
+    match_id: *const c_char,
+    status: *const c_char,
+    background: bool,
+) {
+    crate::with::<SlippiEXIDevice, _>(instance_ptr, |device| {
+        let fn_name = "slprs_exi_device_report_match_status";
+        let match_id = c_str_to_string(match_id, fn_name, "match_id");
+        let status = c_str_to_string(status, fn_name, "status");
+
+        let (uid, play_key) = device.user_manager.get(|user| {
+            (user.uid.clone(), user.play_key.clone())
+        });
+
+        if background {
+            device.api_client.report_match_status_async(uid, match_id, play_key, status);
+        } else {
+            device.api_client.report_match_status(&uid, &match_id, &play_key, &status);
+        }
+    });
+}
+
 /// Calls through to `SlippiGameReporter::push_replay_data`.
 #[unsafe(no_mangle)]
 pub extern "C" fn slprs_exi_device_reporter_push_replay_data(instance_ptr: usize, data: *const u8, length: u32) {

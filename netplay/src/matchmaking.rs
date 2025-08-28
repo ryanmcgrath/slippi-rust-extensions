@@ -13,6 +13,7 @@ use slippi_user::UserManager;
 
 use crate::NetplayState;
 use crate::context::{MatchContext, Player, PlayerRank, Stage};
+use crate::enet::{EnetClient, ReceiveError};
 
 const MM_HOST_DEV: &str = "mm2.slippi.gg";
 const MM_HOST_PROD: &str = "mm.slippi.gg";
@@ -103,12 +104,13 @@ pub fn run(
     }
 
     if let Some(host) = host.take() {
-        terminate_connection(host);
+        host.terminate();
     }
 
     // If ranked, report to the backend that we are attempting to connect to this match.
     if context.id.contains("mode.ranked") {
-        report_connection_attempt(&api_client, &user_manager, &context.id);
+        let (uid, play_key) = user_manager.get(|user| (user.uid.clone(), user.play_key.clone()));
+        api_client.report_match_status_async(uid, context.id.clone(), play_key, "connecting");
     }
 
     // If we get here, we've got a valid match and we're good to go.
@@ -118,127 +120,6 @@ pub fn run(
     match_context.set(context);
 
     // Spin up netplay thread
-}
-
-/// Reports a connection attempt. This should only be called in Ranked.
-fn report_connection_attempt(api_client: &APIClient, user_manager: &UserManager, match_id: &str) {
-    let (uid, play_key) = user_manager.get(|user| (user.uid.clone(), user.play_key.clone()));
-    let status = "connecting";
-
-    match api_client.report_match_status(&uid, &match_id, &play_key, status) {
-        Ok(value) if value => {
-            tracing::info!(
-                target: Log::SlippiOnline,
-                "Executed status report request: {status}"
-            );
-        },
-
-        Ok(value) => {
-            tracing::error!(
-                target: Log::SlippiOnline,
-                ?value,
-                "Failed status report request: {status}"
-            );
-        },
-
-        Err(error) => {
-            tracing::error!(
-                target: Log::SlippiOnline,
-                ?error,
-                "Error executing status report request: {status}"
-            );
-        }
-    }
-}
-
-/// Attempts to terminate the connection by gracefully disconnecting peers. If peers
-/// do not appear to disconnect, this will force disconnects after around 3000ms.
-fn terminate_connection(mut host: Host<UdpSocket>) {
-    for peer in host.peers_mut() {
-        peer.disconnect(0);
-    }
-
-    let timeout = 3000;
-    let mut slept = 0;
-
-    while slept <= timeout {
-        // If we receive a Disconnect, then we can bail early and let the `Drop` impl
-        // on `Host` handle cleaning up resources.
-        if let Ok(Some(Event::Disconnect { peer: _, data: _ })) = host.service() {
-            return;
-        }
-
-        std::thread::sleep(std::time::Duration::from_millis(250));
-        slept += 250;
-    }
-
-    // If we didn't receive a Disconnect event, then we need to force disconnect
-    // everything. When the `host` is dropped at the end of this function it will
-    // trigger `enet_destroy` behind the scenes.
-    for peer in host.peers_mut() {
-        peer.reset();
-    }
-}
-
-#[derive(Debug, Error)]
-enum ReceiveError {
-    #[error(transparent)]
-    HostRead(std::io::Error),
-
-    #[error(transparent)]
-    Deserialize(serde_json::Error),
-
-    #[error("Matchmaking server disconnected")]
-    Disconnect,
-
-    #[error("No response from matchmaking server")]
-    Timeout,
-
-    #[error(transparent)]
-    Utf8Read(std::str::Utf8Error)
-}
-
-/// Repeatedly checks the inner socket for new data. We will attempt to deserialize any data
-/// received to our expected type.
-///
-/// This attempts to replicate the timeout handling of the C++ version, albeit against what
-/// appears to be a newer/different enet API. For the way this is called, it's not a
-/// significant burden to just chunk the timeout checking manually 
-/// (e.g 5000ms in 250ms chunks, etc).
-fn receive<T>(host: &mut Host<UdpSocket>, mut timeout_ms: i32) -> Result<T, ReceiveError>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let host_service_timeout_ms = 250;
-
-    // Make sure loop runs at least once
-    if timeout_ms < host_service_timeout_ms {
-        timeout_ms = host_service_timeout_ms;
-    }
-
-    // This is not a perfect way to timeout but hopefully it's close enough?
-    let max_attempts = timeout_ms / host_service_timeout_ms;
-    
-    let mut attempt = 0;
-
-    while attempt < max_attempts {
-        if let Some(event) = host.service().map_err(ReceiveError::HostRead)? {
-            if let Event::Disconnect { .. } = event {
-                return Err(ReceiveError::Disconnect);
-            }
-
-            if let Event::Receive { peer: _, channel_id: _, packet } = event {
-                let message = str::from_utf8(packet.data()).map_err(ReceiveError::Utf8Read)?;
-                let data = serde_json::from_str(message).map_err(ReceiveError::Deserialize)?;
-                return Ok(data);
-            }
-        }
-
-        attempt += 1;
-        std::thread::sleep(std::time::Duration::from_millis(250));
-    }
-
-    Err(ReceiveError::Timeout)
 }
 
 #[derive(Debug, Error)]
@@ -428,7 +309,7 @@ fn submit_ticket(
     user_manager: &UserManager,
     search: &MatchSearchSettings,
     app_version: &str
-) -> Result<Host<UdpSocket>, SubmitTicketError> {
+) -> Result<EnetClient, SubmitTicketError> {
     let (mm_socket_addr, mut host, selected_network_port) = connect_to_mm(mm_host)
         .map_err(SubmitTicketError::Connect)?;
     
@@ -464,7 +345,9 @@ fn submit_ticket(
     let channel_id = 0;
     host.broadcast(channel_id, &packet);
 
-    let response: SubmitTicketResponse = receive(&mut host, 5000)
+    let mut client = EnetClient::new(host);
+
+    let response: SubmitTicketResponse = client.receive(5000)
         .map_err(SubmitTicketError::Receive)?;
 
     tracing::info!(target: Log::SlippiOnline, ticket_response = ?response);
@@ -477,7 +360,7 @@ fn submit_ticket(
         return Err(SubmitTicketError::Server(error));
     }
 
-    Ok(host)
+    Ok(client)
 }
 
 #[derive(Debug, Error)]
@@ -564,10 +447,10 @@ struct TicketResponse {
 ///
 /// If this returns `None`, it just means there's no response available yet.
 fn check_ticket(
-    host: &mut Host<UdpSocket>,
+    client: &mut EnetClient,
     user_manager: &UserManager
 ) -> Result<Option<MatchContext>, CheckTicketError> {
-    let response = receive::<TicketResponse>(host, 2000);
+    let response = client.receive::<TicketResponse>(2000);
 
     // A timeout isn't an error to raise here; it just means we don't have an
     // assigned match yet and should check back in a short bit.

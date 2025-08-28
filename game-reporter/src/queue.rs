@@ -15,8 +15,8 @@ use dolphin_integrations::{Color, Dolphin, Duration as OSDDuration, Log};
 use slippi_gg_api::{APIClient, GraphQLError};
 use slippi_shared_types::OnlinePlayMode;
 
+use crate::ProcessingEvent;
 use crate::types::{GameReport, GameReportRequestPayload};
-use crate::{ProcessingEvent, StatusReportEvent};
 
 /// How many times a report should attempt to send.
 const MAX_REPORT_ATTEMPTS: i32 = 5;
@@ -65,63 +65,6 @@ impl GameReporterQueue {
             Err(error) => {
                 // This should never happen.
                 tracing::error!(target: Log::SlippiOnline, ?error, "Unable to lock queue, dropping report");
-            },
-        }
-    }
-}
-
-pub(crate) fn run_report_match_status(api_client: APIClient, receiver: Receiver<StatusReportEvent>) {
-    loop {
-        // Watch for notification to do work
-        match receiver.recv() {
-            Ok(StatusReportEvent::ReportAvailable {
-                uid,
-                play_key,
-                match_id,
-                status,
-            }) => {
-                match api_client.report_match_status(&uid, &match_id, &play_key, &status) {
-                    Ok(value) if value => {
-                        tracing::info!(
-                            target: Log::SlippiOnline,
-                            "Successfully executed status report request: {status}"
-                        );
-                    },
-
-                    Ok(value) => {
-                        tracing::error!(
-                            target: Log::SlippiOnline,
-                            ?value,
-                            "Error executing status report request: {status}"
-                        );
-                    },
-
-                    Err(error) => {
-                        tracing::error!(
-                            target: Log::SlippiOnline,
-                            ?error,
-                            "Error executing status report request: {status}"
-                        );
-                    }
-                }
-            },
-
-            Ok(StatusReportEvent::Shutdown) => {
-                tracing::info!(target: Log::SlippiOnline, "Status report thread winding down");
-                break;
-            },
-
-            // This should realistically never happen, since it means the Sender
-            // that's held a level up has been dropped entirely - but we'll log
-            // for the hell of it in case anyone's tweaking the logic.
-            Err(error) => {
-                tracing::error!(
-                    target: Log::SlippiOnline,
-                    ?error,
-                    "Failed to receive StatusReportEvent, thread will exit"
-                );
-
-                break;
             },
         }
     }

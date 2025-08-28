@@ -19,6 +19,7 @@ pub use config::{Config, FilePathsConfig, SCMConfig};
 #[derive(Debug)]
 pub struct SlippiEXIDevice {
     config: Config,
+    pub api_client: APIClient,
     pub game_reporter: GameReporter,
     pub user_manager: UserManager,
     pub jukebox: Option<Jukebox>,
@@ -50,7 +51,6 @@ impl SlippiEXIDevice {
 
         let game_reporter = GameReporter::new(
             api_client.clone(),
-            user_manager.clone(),
             config.paths.iso.clone()
         );
 
@@ -67,6 +67,7 @@ impl SlippiEXIDevice {
 
         Self {
             config,
+            api_client,
             game_reporter,
             user_manager,
             jukebox: None,

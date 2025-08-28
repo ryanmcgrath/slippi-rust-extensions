@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::ops::{Deref, DerefMut};
@@ -5,6 +6,8 @@ use std::time::Duration;
 
 use serde_json::json;
 use ureq::{Agent, AgentBuilder, Resolver};
+
+use dolphin_integrations::Log;
 
 mod graphql;
 pub use graphql::{GraphQLBuilder, GraphQLError};
@@ -22,7 +25,10 @@ impl Resolver for Ipv4Resolver {
             let vec = iter.filter(|s| s.is_ipv4()).collect::<Vec<SocketAddr>>();
 
             if vec.is_empty() {
-                tracing::warn!("Failed to get any IPV4 addresses. Does the DNS server support it?");
+                tracing::warn!(
+                    target: Log::SlippiOnline,
+                    "Failed to get any IPV4 addresses. Does the DNS server support it?"
+                );
             }
 
             vec
@@ -103,7 +109,7 @@ impl APIClient {
         match_id: &str,
         play_key: &str,
         status: &str
-    ) -> Result<bool, GraphQLError> {
+    ) {
         let mutation = r#"
             mutation ($report: OnlineMatchStatusReportInput!) {
                 reportOnlineMatchStatus (report: $report)
@@ -119,10 +125,63 @@ impl APIClient {
             }
         });
 
-        self.graphql(mutation)
+        match self.graphql(mutation)
             .variables(variables)
             .data_field("/data/reportOnlineMatchStatus")
             .send::<bool>()
+        {
+            Ok(value) if value => {
+                tracing::info!(
+                    target: Log::SlippiOnline,
+                    "Executed status report request: {status}"
+                );
+            },
+
+            Ok(value) => {
+                tracing::error!(
+                    target: Log::SlippiOnline,
+                    ?value,
+                    "Failed status report request: {status}"
+                );
+            },
+
+            Err(error) => {
+                tracing::error!(
+                    target: Log::SlippiOnline,
+                    ?error,
+                    "Error executing status report request: {status}"
+                );
+            }
+        }
+    }
+
+    /// An asynchronous version of `report_match_status`.
+    ///
+    /// This spawns a temporary background thread to run the request in. This is not
+    /// "async" in typical Rust terms; you (perhaps obviously) do not need to call `.await`
+    /// on this.
+    pub fn report_match_status_async<StatusString>(
+        &self,
+        uid: String,
+        match_id: String,
+        play_key: String,
+        status: StatusString
+    )
+    where
+        StatusString: Into<Cow<'static, str>>,
+    {
+        let api_client = self.clone();
+        let status: Cow<'static, str> = status.into();
+
+        let thread = std::thread::Builder::new()
+            .name("MatchStatusReq".into())
+            .spawn(move || {
+                api_client.report_match_status(&uid, &match_id, &play_key, &status);
+            });
+
+        if let Err(error) = thread {
+            tracing::error!(target: Log::SlippiOnline, ?error, "Unable to spawn request thread");
+        }
     }
 }
 

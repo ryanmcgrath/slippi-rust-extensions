@@ -9,6 +9,8 @@ use slippi_gg_api::APIClient;
 use slippi_shared_types::{AtomicState, OnceValue};
 use slippi_user::UserManager;
 
+mod enet;
+
 mod context;
 use context::MatchContext;
 pub use context::Stage;
